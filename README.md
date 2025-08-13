@@ -1,12 +1,16 @@
 # GetFull_CBETA
 使用方法
+
 A. 直接貼 uv3 網址（你給的那種）
+
 python download_dila_iiif_max.py --uv3 "https://dia.dila.edu.tw/uv3/index.html?id=Tv01p0300#?c=0&m=0&s=0&cv=309"
 
 B. 手動指定典籍 / 冊數 / 頁索引
+
 python download_dila_iiif_max.py --canon T --volume 1 --canvas 309 -o page309_max.jpg
 
 必要套件
+
 pip install requests pillow
 
 檢查你是否真的拿到最大解析度
