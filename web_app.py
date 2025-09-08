@@ -16,7 +16,7 @@ app.add_static_files('/downloads', str(TMP_DIR))
 # UI
 # ──────────────────────────────────────────────────────────────────────────────
 with ui.card():
-    ui.label('Download by UV3 URL')
+    ui.label('請輸入 CBETA 作業網址')
     url_input = ui.input('UV3 URL').style('width: 80vw;').props('clearable')
 
     # Area to show the generated download links
@@ -49,7 +49,7 @@ with ui.card():
         except Exception as e:
             ui.notify(f'下載失敗：{e}', type='negative')
 
-    ui.button('DOWNLOAD', on_click=download_by_uv3, color='primary')
+    ui.button('從CBETA拿最高解析度圖片', on_click=download_by_uv3, color='primary')
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Housekeeping: clean old files (older than 1 hour)
