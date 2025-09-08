@@ -66,4 +66,11 @@ def cleanup_old_files():
 
 ui.timer(1800, cleanup_old_files)  # every 30 minutes
 
-ui.run()
+ui.run(
+    title='文檔處理系統',
+    favicon='📄',
+    port=80,                     # 改這裡
+    host='0.0.0.0',
+    reload=False,
+    show=True,
+)
