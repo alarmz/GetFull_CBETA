@@ -1,5 +1,17 @@
 # GetFull_CBETA
-使用方法
+
+## Web Application
+
+提供了一個基於 NiceGUI 的簡易網頁介面：
+
+```
+pip install nicegui requests pillow
+python web_app.py
+```
+
+瀏覽器開啟 http://localhost:8080 即可使用。
+
+## 使用方法
 
 A. 直接貼 uv3 網址（你給的那種）
 

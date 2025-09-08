@@ -142,52 +142,47 @@ def stitch(session, svc_id: str, info: dict, out: str):
             full.paste(tile, (x, y))
     full.save(out, quality=95)
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--uv3', help='uv3 URL like https://dia.dila.edu.tw/uv3/index.html?id=Tv01p0300#?cv=309')
-    ap.add_argument('--canon', default='T')
-    ap.add_argument('--volume', type=int)
-    ap.add_argument('--canvas', type=int, default=0)
-    ap.add_argument('-o', '--out', default=None)
-    args = ap.parse_args()
 
-    if args.uv3:
-        canon, vol2, cv = parse_uv3(args.uv3)
+
+def download_image(uv3: str | None = None, canon: str = 'T', volume: int | None = None,
+                   canvas: int = 0, out: str | None = None) -> str:
+    """Download one IIIF image and return the saved path."""
+    if uv3:
+        canon, vol2, cv = parse_uv3(uv3)
     else:
-        if args.volume is None:
-            ap.error("Provide --uv3 or (--canon --volume --canvas)")
-        canon = args.canon; vol2 = str(args.volume).zfill(2); cv = args.canvas
+        if volume is None:
+            raise ValueError("Provide uv3 or volume")
+        vol2 = str(volume).zfill(2)
+        cv = canvas
 
     man = manifest_url(canon, vol2)
     s = requests.Session()
     m = http_ok(s, man).json()
-    canvas, svc_id = pick_canvas_service(m, cv)
+    canvas_obj, svc_id = pick_canvas_service(m, cv)
 
-    label = canvas.get('label')
+    label = canvas_obj.get('label')
     if isinstance(label, dict):
         label = label.get('@value') or label.get('en') or label.get('zh')
     label = label or f"cv{cv}"
-    out = args.out or f"{canon}v{vol2}_{label}.jpg"
+    out = out or f"{canon}v{vol2}_{label}.jpg"
     out = os.path.abspath(out)
 
     print(f"[i] manifest: {man}")
     print(f"[i] svc_id  : {svc_id}")
     info = get_info(s, svc_id)
-    w,h = info.get('width'), info.get('height')
+    w, h = info.get('width'), info.get('height')
     print(f"[i] intrinsic size: {w}x{h}")
-    # If server publishes maxWidth/maxHeight/maxArea smaller than intrinsic, we must stitch
     maxW = info.get('maxWidth'); maxH = info.get('maxHeight'); maxA = info.get('maxArea')
     try_direct = True
     if (maxW and w and maxW < w) or (maxH and h and maxH < h):
         try_direct = False
-    if maxA and w and h and (w*h) > maxA:
+    if maxA and w and h and (w * h) > maxA:
         try_direct = False
 
     if try_direct:
         try:
             used = try_direct_best(s, svc_id, info, out)
             print(f"[✓] saved direct: {out} ({used})")
-            # sanity: verify we really got max width; if smaller, fall back to stitch
             got = Image.open(out)
             if w and got.width < w:
                 print(f"[!] direct result width {got.width} < intrinsic {w}, stitching instead...")
@@ -201,6 +196,18 @@ def main():
         print("[i] Direct full is capped by maxWidth/maxHeight/maxArea; stitching...")
         stitch(s, svc_id, info, out)
         print(f"[✓] saved stitched: {out}")
+
+    return out
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--uv3', help='uv3 URL like https://dia.dila.edu.tw/uv3/index.html?id=Tv01p0300#?cv=309')
+    ap.add_argument('--canon', default='T')
+    ap.add_argument('--volume', type=int)
+    ap.add_argument('--canvas', type=int, default=0)
+    ap.add_argument('-o', '--out', default=None)
+    args = ap.parse_args()
+    download_image(args.uv3, args.canon, args.volume, args.canvas, args.out)
 
 if __name__ == '__main__':
     main()
