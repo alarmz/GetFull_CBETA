@@ -1,3 +1,7 @@
+# ===============================
+# download_dila_iiif_max.py
+# (with TLS whitelist skip for dia.dila.edu.tw via env DILA_SKIP_TLS_VERIFY)
+# ===============================
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -5,6 +9,7 @@ DILA (dia.dila.edu.tw) IIIF downloader — max resolution
 - Resolve canvas via manifest.
 - Try best-order: explicit intrinsic width, "max", then stitch tiles.
 - While stitching, request region with exact pixel width to avoid downsampling.
+- NEW: Only for dia.dila.edu.tw, if env DILA_SKIP_TLS_VERIFY=1/true/yes, skip TLS verify.
 """
 
 import re
@@ -19,7 +24,26 @@ from io import BytesIO
 import requests
 from PIL import Image
 
-UA = {"User-Agent":"Mozilla/5.0"}
+UA = {"User-Agent": "Mozilla/5.0"}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TLS verify control (domain whitelist)
+# ──────────────────────────────────────────────────────────────────────────────
+_SKIP_RAW = os.getenv('DILA_SKIP_TLS_VERIFY', '0').strip().lower()
+_SKIP_TLS = _SKIP_RAW in {'1', 'true', 'yes'}
+
+
+def _skip_verify_for(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ''
+    except Exception:
+        return False
+    return _SKIP_TLS and host.endswith('dia.dila.edu.tw')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# UV3 helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
 def parse_uv3(url: str):
     q = urlparse(url)
@@ -35,8 +59,10 @@ def parse_uv3(url: str):
     volume = m_id.group(2).zfill(2)
     return canon, volume, canvas_index
 
+
 def manifest_url(canon: str, volume_2d: str):
     return f"https://dia.dila.edu.tw/iiif/{canon}/v{volume_2d}/manifest.json"
+
 
 def pick_canvas_service(manifest: dict, canvas_index: int):
     seqs = manifest.get('sequences') or []
@@ -63,16 +89,44 @@ def pick_canvas_service(manifest: dict, canvas_index: int):
         raise ValueError("Missing service @id")
     return canvas, svc_id
 
-def http_ok(session, url, stream=False, ok=(200,)):
-    r = session.get(url, timeout=30, stream=stream, headers=UA)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HTTP helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def http_ok_old(session, url, stream=False, ok=(200,)):
+    r = session.get(url, timeout=30, stream=stream, headers=UA,
+                    verify=not _skip_verify_for(url))
     if r.status_code not in ok:
         raise requests.HTTPError(f"{r.status_code} for {url}", response=r)
     return r
+
+from urllib.parse import urlparse
+
+def http_ok(session, url, stream=False, ok=(200,)):
+    # 判斷 domain
+    domain = urlparse(url).hostname or ""
+    # 只對 dia.dila.edu.tw 關閉 verify
+    verify = True
+    if domain.endswith("dia.dila.edu.tw"):
+        verify = False
+
+    r = session.get(url, timeout=30, stream=stream, headers=UA, verify=verify)
+    if r.status_code not in ok:
+        raise requests.HTTPError(f"{r.status_code} for {url}", response=r)
+    return r
+
+
 
 def get_info(session, svc_id: str):
     info_url = f"{svc_id}/info.json"
     r = http_ok(session, info_url)
     return r.json()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Direct max try + Tile stitching
+# ──────────────────────────────────────────────────────────────────────────────
 
 def try_direct_best(session, svc_id: str, info: dict, out: str):
     """Try explicit intrinsic width, then 'max', then generic full/full."""
@@ -101,9 +155,9 @@ def try_direct_best(session, svc_id: str, info: dict, out: str):
             tried.append((u, str(e)))
     raise RuntimeError("Direct full download failed", tried)
 
+
 def fetch_tile_exact(session, svc_id: str, x, y, w, h):
     """Fetch a tile region with no downscaling. Prefer size '{w},' (exact width)."""
-    # Try exact width
     urls = [
         f"{svc_id}/{x},{y},{w},{h}/{w},/0/default.jpg",
         f"{svc_id}/{x},{y},{w},{h}/pct:100/0/default.jpg",
@@ -114,10 +168,10 @@ def fetch_tile_exact(session, svc_id: str, x, y, w, h):
         img = Image.open(BytesIO(r.content)).convert("RGB")
         if img.size == (w, h):
             return img
-        # if server returns larger (rare), resize down to expected (avoid seams)
         img = img.resize((w, h), Image.LANCZOS)
         return img
     raise RuntimeError("Failed to fetch tile region")
+
 
 def stitch(session, svc_id: str, info: dict, out: str):
     width = info['width']; height = info['height']
@@ -143,6 +197,9 @@ def stitch(session, svc_id: str, info: dict, out: str):
     full.save(out, quality=95)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Public API
+# ──────────────────────────────────────────────────────────────────────────────
 
 def download_image(uv3: str | None = None, canon: str = 'T', volume: int | None = None,
                    canvas: int = 0, out: str | None = None) -> str:
@@ -199,6 +256,7 @@ def download_image(uv3: str | None = None, canon: str = 'T', volume: int | None 
 
     return out
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--uv3', help='uv3 URL like https://dia.dila.edu.tw/uv3/index.html?id=Tv01p0300#?cv=309')
@@ -209,5 +267,7 @@ def main():
     args = ap.parse_args()
     download_image(args.uv3, args.canon, args.volume, args.canvas, args.out)
 
+
 if __name__ == '__main__':
     main()
+
